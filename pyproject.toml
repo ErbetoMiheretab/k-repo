@@ -1,0 +1,10 @@
+[project]
+name = "k-repo"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.2.6",
+    "djangorestframework>=3.16.1",
+]

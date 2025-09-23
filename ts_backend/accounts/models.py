@@ -5,7 +5,7 @@ from django.core.validators import RegexValidator
 class Department(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
-    manager = models.ForeignKey('User', null=True, blank=True, on_delete=models.SET_NULL, related_name='managed_departments')
+    team_leader = models.ForeignKey('User', null=True, blank=True, on_delete=models.SET_NULL, related_name='managed_departments')
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
@@ -25,15 +25,6 @@ class User(AbstractUser):
     role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='TECH')
     phone = models.CharField(max_length=20, blank=True, validators=[RegexValidator(r'^\+?1?\d{9,15}$')])
     profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True)
-    
-    # Reputation system
-    reputation_score = models.IntegerField(default=0)
-    total_solutions = models.PositiveIntegerField(default=0)
-    total_helpful_votes = models.PositiveIntegerField(default=0)
-    
-    # Preferences
-    email_notifications = models.BooleanField(default=True)
-    push_notifications = models.BooleanField(default=True)
     
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

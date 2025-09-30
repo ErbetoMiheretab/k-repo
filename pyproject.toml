@@ -8,4 +8,8 @@ dependencies = [
     "django>=5.2.6",
     "django-filter>=25.1",
     "djangorestframework>=3.16.1",
+    "djangorestframework-simplejwt>=5.5.1",
+    "djoser>=2.3.3",
+    "drf-spectacular>=0.28.0",
+    "pillow>=11.3.0",
 ]

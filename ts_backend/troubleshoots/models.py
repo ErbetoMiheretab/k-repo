@@ -145,7 +145,6 @@ class TroubleshootingEntry(models.Model):
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    published_at = models.DateTimeField(null=True, blank=True)
 
     # search vector
     search_vector = SearchVectorField(null=True, blank=True, editable=False)
@@ -158,7 +157,7 @@ class TroubleshootingEntry(models.Model):
             models.Index(fields=["author", "-created_at"]),
             models.Index(fields=["-upvotes_count"]),
             models.Index(fields=["-views_count"]),
-            models.Index(fields=["status", "published_at"]),
+            # models.Index(fields=["status", "published_at"]),
             models.Index(fields=["is_verified", "status"]),
         ]
     def save(self, *args, **kwargs):
@@ -269,10 +268,6 @@ class Comment(models.Model):
         default=False
     )  # Mark if this comment provides an alternative solution
 
-    # Voting for comments
-    upvotes_count = models.PositiveIntegerField(default=0)
-    downvotes_count = models.PositiveIntegerField(default=0)
-
     is_edited = models.BooleanField(default=False)
     is_deleted = models.BooleanField(default=False)
 
@@ -284,27 +279,10 @@ class Comment(models.Model):
     level = models.PositiveIntegerField(default=0)  # For depth tracking
 
     class Meta:
-        ordering = ["-upvotes_count", "created_at"]
+        ordering = ["created_at"]
 
     def __str__(self):
         return  f"Comment by {self.author.username} on {self.troubleshooting_entry.title}"
 
 
 
-class CommentVote(models.Model):
-    VOTE_TYPES = [
-        ("UP", "Upvote"),
-        ("DOWN", "Downvote"),
-    ]
-
-    comment = models.ForeignKey(Comment, on_delete=models.CASCADE, related_name="votes")
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    vote_type = models.CharField(max_length=4, choices=VOTE_TYPES)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ["comment", "user"]
-
-
-    def __str__(self):
-        return  f"{self.user.username} {self.vote_type}voted comment {self.comment.id}"

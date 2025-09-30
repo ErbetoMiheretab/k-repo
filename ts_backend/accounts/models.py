@@ -2,6 +2,8 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.core.validators import RegexValidator
 
+
+
 class Department(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
@@ -10,6 +12,7 @@ class Department(models.Model):
     
     def __str__(self):
         return self.name
+  
 
 class User(AbstractUser):
     ROLE_CHOICES = [
@@ -35,10 +38,16 @@ class User(AbstractUser):
 
 class UserExpertise(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='expertise_areas')
-    category = models.ForeignKey('troubleshooting.Category', on_delete=models.CASCADE)
-    verified = models.BooleanField(default=False)
-    verified_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='verified_expertise')
-    created_at = models.DateTimeField(auto_now_add=True)
+    category = models.ForeignKey('troubleshoots.Category', on_delete=models.CASCADE)
     
     class Meta:
         unique_together = ['user', 'category']
+
+
+# Suggestions for Enhancement
+# Custom Manager or QuerySet: Add methods like User.objects.verified() or UserExpertise.objects.by_category(cat) for cleaner queries.
+
+# Signals: Use Django signals to auto-create related objects or log verification events.
+
+
+# Admin Display: Customize list_display in your admin to show employee_id, role, and is_verified.

@@ -7,19 +7,21 @@ from . import views
 
 
 router = DefaultRouter()
-router.register(r'departments', views.DepartmentViewSet)
-router.register(r'users', views.UserViewSet)
-# router.register(r'expertise', views.UserExpertiseViewSet)
-
+router.register(r'departments', views.DepartmentViewSet, basename='department')
+router.register(r'users', views.UserViewSet, basename='user')
 
 urlpatterns = [
     path('', include(router.urls)),
+
+    #Auth endpoints
     path('token/', views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', views.TokenRefreshView.as_view(), name='token_refresh'),
 
-    # Other endpoints
+    # User profile endpoints
     path('profile/', views.UserProfileView.as_view(), name='user_profile'),
-    # path('change-password/', views.ChangePasswordView.as_view(), name='change_password'),
+    path('change-password/', views.ChangePasswordView.as_view(), name='change_password'),
+    
+    # Department managemnt
     path('my-department-members/', views.MyDepartmentMembersView.as_view(), name='my_department_members'),
 
 ]

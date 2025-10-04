@@ -1,0 +1,27 @@
+### Create a User
+POST http://localhost:8000/api/users/
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzU5MjU4ODA2LCJpYXQiOjE3NTkyNTUyMDYsImp0aSI6ImE0ZTUyYjY0ODU0OTQzNGNiOWMyMTBkY2MyOGIxYTdiIiwidXNlcl9pZCI6IjEiLCJlbXBsb3llZV9pZCI6bnVsbH0.V3GMH_gxSPOD-KQ1nAViUQbQ-4iTtF_G3RumvNisxaQ
+Content-Type: application/json
+
+{
+    "username": "jdoe",
+    "email": "john.doe@example.com",
+    "password": "a-very-strong-password-123",
+    "first_name": "John",
+    "last_name": "Doe",
+    "employee_id": "EMP10025",
+    "department": "Network", 
+    "role": "TECH", 
+    "phone": "+1234567890"
+}
+
+
+###
+POST http://localhost:8000/api/token/
+
+Content-Type: application/json
+
+{
+  "username": "MI123",
+  "password": "123456"
+}

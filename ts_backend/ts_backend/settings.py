@@ -43,7 +43,8 @@ INSTALLED_APPS = [
     # 'djoser'
     'drf_spectacular', 
     'accounts',
-    'troubleshoots'
+    'troubleshoots',
+    'mptt'
 ]
 
 MIDDLEWARE = [

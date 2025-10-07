@@ -1,8 +1,36 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from django.db.models import Prefetch
 from .models import Category, Tag, TroubleshootingEntry
 
 User = get_user_model()
+
+
+class CategoryIdValidator:
+    def validate_category_id(self, value):
+        if not Category.objects.filter(id=value, is_active=True).exists():
+            raise serializers.ValidationError("Invalid category or is not active")
+        
+        return value
+
+class TagIdsValidator:
+    def validate_tag_ids(self, value):
+        if value:  # empty list is allowed
+            found = Tag.objects.filter(id__in=value).count()
+            if found != len(value):
+                raise serializers.ValidationError("One or more tag IDs are invalid")
+        return value
+
+class EstimatedTimeValidator:
+    MAX_MINUTES = 7 * 24 * 60  # 1 week
+
+    def validate_estimated_time(self, value):
+        if value and value > self.MAX_MINUTES:
+            raise serializers.ValidationError(
+                f"Estimated time cannot exceed 1 week ({self.MAX_MINUTES} minutes)"
+            )
+        return value
 
 
 class UserBasicSerializer(serializers.ModelSerializer):
@@ -10,7 +38,7 @@ class UserBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'first_name', 'last_name']
-        read_only_fields = ['id', 'username', 'first_name', 'last_name']
+        read_only_fields = fields
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -25,30 +53,39 @@ class CategorySerializer(serializers.ModelSerializer):
             'subcategories', 'entry_count'
         ]
         read_only_fields = ['id', 'slug', 'created_at', 'updated_at']
-    
-    def get_subcategories(self, obj):
-        if hasattr(obj, 'subcategories'):
-            return CategorySerializer(
-                obj.subcategories.filter(is_active=True), 
-                many=True, 
-                context=self.context
-            ).data
-        return []
+        ordering = ["order", "name"]
+
+    def get_subcategories(self, obj) -> list[dict]:
+        # Prefetch in the viewset guarantees this is already cached
+        return CategorySerializer(
+            obj.subcategories.all(), many=True, context=self.context
+        ).data
     
     def get_entry_count(self, obj):
         return obj.entries.filter(status='PUBLISHED').count()
 
-    def validate_parent(self, value):
-        """Prevent circular relationships"""
+    # def validate_parent(self, value) -> Category | None:
+    #     """Prevent circular relationships"""
+    #     if value and self.instance:
+    #         # Check if setting this parent would create a circular reference
+    #         current = value
+    #         while current and current.parent:
+    #             if current.parent == self.instance:
+    #                 raise serializers.ValidationError(
+    #                     "Cannot set parent: would create circular relationship"
+    #                 )
+    #             current = current.parent
+    #     return value
+
+    def validate_parent(self, value: Category | None) -> Category | None:
         if value and self.instance:
-            # Check if setting this parent would create a circular reference
-            current = value
-            while current and current.parent:
-                if current.parent == self.instance:
+            candidate = value
+            while candidate and candidate.parent:
+                if candidate.parent == self.instance:
                     raise serializers.ValidationError(
-                        "Cannot set parent: would create circular relationship"
+                        "Setting this parent would create a circular reference."
                     )
-                current = current.parent
+                candidate = candidate.parent
         return value
 
 
@@ -68,7 +105,13 @@ class TagSerializer(serializers.ModelSerializer):
 
 
 class TroubleshootingEntryListSerializer(serializers.ModelSerializer):
-    """Lighter serializer for list views"""
+    """
+    Optimised for list endpoints.
+    View-set MUST annotate:
+        score        -> vote_score
+        total_votes  -> total_votes
+    and prefetch category / tags / author / verified_by.
+    """
     author = UserBasicSerializer(read_only=True)
     category = serializers.StringRelatedField()
     tags = serializers.StringRelatedField(many=True)
@@ -89,10 +132,13 @@ class TroubleshootingEntryListSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
     
+    # def get_vote_score(self, obj):
+    #     if hasattr(obj, 'score'):
+    #         return obj.score
+    #     return obj.vote_score
     def get_vote_score(self, obj):
-        if hasattr(obj, 'score'):
-            return obj.score
-        return obj.vote_score
+        return getattr(obj, "score", 0)  # <-- safe fallback
+
     
     def get_total_votes(self, obj):
         if hasattr(obj, 'up_count') and hasattr(obj, 'down_count'):
@@ -100,7 +146,12 @@ class TroubleshootingEntryListSerializer(serializers.ModelSerializer):
         return obj.total_votes
 
 
-class TroubleshootingEntryDetailSerializer(serializers.ModelSerializer):
+class TroubleshootingEntryDetailSerializer(
+    serializers.ModelSerializer,
+    CategoryIdValidator,
+    TagIdsValidator,
+    EstimatedTimeValidator
+    ):
     """Detailed serializer for detail views"""
     author = UserBasicSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
@@ -132,37 +183,17 @@ class TroubleshootingEntryDetailSerializer(serializers.ModelSerializer):
             'verified_at', 'verification_notes', 'created_at', 'updated_at'
         ]
     
+    # def get_vote_score(self, obj):
+    #     if hasattr(obj, 'score'):
+    #         return obj.score
+    #     return obj.vote_score
     def get_vote_score(self, obj):
-        if hasattr(obj, 'score'):
-            return obj.score
-        return obj.vote_score
+        return getattr(obj, "score", 0)
     
     def get_total_votes(self, obj):
         if hasattr(obj, 'up_count') and hasattr(obj, 'down_count'):
             return obj.up_count + obj.down_count
         return obj.total_votes
-    
-    def validate_category_id(self, value):
-        """Validate category exists and is active"""
-        try:
-            category = Category.objects.get(id=value, is_active=True)
-            return value
-        except Category.DoesNotExist:
-            raise serializers.ValidationError("Invalid category or category is not active")
-    
-    def validate_tag_ids(self, value):
-        """Validate all tag IDs exist"""
-        if value:
-            existing_tags = Tag.objects.filter(id__in=value).count()
-            if existing_tags != len(value):
-                raise serializers.ValidationError("One or more tag IDs are invalid")
-        return value
-    
-    def validate_estimated_time(self, value):
-        """Validate estimated time is reasonable"""
-        if value and value > 10080:  # 1 week in minutes
-            raise serializers.ValidationError("Estimated time cannot exceed 1 week (10080 minutes)")
-        return value
     
     def update(self, instance, validated_data):
         # Handle category update
@@ -186,7 +217,12 @@ class TroubleshootingEntryDetailSerializer(serializers.ModelSerializer):
         return instance
 
 
-class TroubleshootingEntryCreateSerializer(serializers.ModelSerializer):
+class TroubleshootingEntryCreateSerializer(
+    serializers.ModelSerializer,
+    CategoryIdValidator, 
+    TagIdsValidator,     
+    EstimatedTimeValidator 
+    ):
     """Serializer for creating new entries"""
     category_id = serializers.IntegerField()
     tag_ids = serializers.ListField(
@@ -203,30 +239,8 @@ class TroubleshootingEntryCreateSerializer(serializers.ModelSerializer):
             'prerequisites', 'estimated_time', 'category_id', 'tag_ids',
             'priority', 'status'
         ]
-    
-    def validate_category_id(self, value):
-        """Validate category exists and is active"""
-        try:
-            Category.objects.get(id=value, is_active=True)
-            return value
-        except Category.DoesNotExist:
-            raise serializers.ValidationError("Invalid category or category is not active")
-    
-    def validate_tag_ids(self, value):
-        """Validate all tag IDs exist"""
-        if value:
-            existing_tags = Tag.objects.filter(id__in=value).count()
-            if existing_tags != len(value):
-                raise serializers.ValidationError("One or more tag IDs are invalid")
-        return value
-    
-    def validate_estimated_time(self, value):
-        """Validate estimated time is reasonable"""
-        if value and value > 10080:  # 1 week in minutes
-            raise serializers.ValidationError("Estimated time cannot exceed 1 week (10080 minutes)")
-        return value
-    
-    def create(self, validated_data):
+
+    def create(self, validated_data) -> TroubleshootingEntry:
         tag_ids = validated_data.pop('tag_ids', [])
         category_id = validated_data.pop('category_id')
         
@@ -235,32 +249,23 @@ class TroubleshootingEntryCreateSerializer(serializers.ModelSerializer):
         validated_data['category_id'] = category_id
         
         entry = TroubleshootingEntry.objects.create(**validated_data)
-        
-        # Set tags
-        if tag_ids:
-            entry.tags.set(tag_ids)
-        
+        entry.tags.set(tag_ids)
         return entry
 
 
 class TroubleshootingEntryVerificationSerializer(serializers.ModelSerializer):
-    """Serializer for entry verification by staff"""
+    """
+     **Staff-only endpoint** – enforce `IsAdminUser` in the view-set.
+    """
     
     class Meta:
         model = TroubleshootingEntry
         fields = ['is_verified', 'verification_notes']
     
-    def validate(self, attrs):
-        """Ensure user can verify entries"""
-        request = self.context.get('request')
-        if not (request and request.user.is_staff):
-            raise serializers.ValidationError("Only staff members can verify entries")
-        return attrs
     
-    def update(self, instance, validated_data):
+    def update(self, instance: TroubleshootingEntry, validated_data: dict) -> TroubleshootingEntry:
         if validated_data.get('is_verified'):
             validated_data['verified_by'] = self.context['request'].user
-            from django.utils import timezone
             validated_data['verified_at'] = timezone.now()
         else:
             validated_data['verified_by'] = None

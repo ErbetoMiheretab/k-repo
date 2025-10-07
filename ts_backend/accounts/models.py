@@ -15,7 +15,12 @@ class Department(models.Model):
         ('DATABASE_AND_SOFTWARE_DEV', 'Database and Software Development'),
         ('CYBER_SECURITY', 'Cyber Security'),
         ('NETWORK' , 'Network'),
-        ('TRAINING_AND_MAINTENANCE', 'Training and maintenance')
+        ('TRAINING_AND_MAINTENANCE', 'Training and maintenance'),
+
+        #('NETWORK AND INFRASTRUCTURE', 'Network and Infrastructure'),
+        #('SOFTWARE MAINTENACNE AND DB', 'Software maintenance and database'),
+        #('TECHNOLOGY TRAINING AND MAINTENANCE', 'Technology trainig and Maintenance'),
+        #('CYBER SEC', 'Cyber security'),
     ]
 
     name = models.CharField(max_length=100, choices=DEPARTMENTS, default='DEPARTMENT', help_text="Select the department type", db_index=True)

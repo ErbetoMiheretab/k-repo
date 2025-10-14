@@ -1,4 +1,3 @@
-from datetime import timezone
 from django.db import models, transaction
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.search import SearchVector
@@ -10,6 +9,7 @@ from django.core.exceptions import ValidationError
 from django.contrib.postgres.search import SearchVectorField
 from django.contrib.postgres.indexes import GinIndex
 from django.utils.text import slugify
+from django.utils import timezone
 from mptt.models import MPTTModel, TreeForeignKey
 from django.conf import settings
 import magic, re

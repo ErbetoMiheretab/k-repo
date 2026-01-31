@@ -90,14 +90,80 @@ class DepartmentViewSet(viewsets.ModelViewSet):
         Team leaders can update members in their department.
         Authenticated users can view
         """
-        if self.action in ["create", "destroy"]:
+        if self.action in ["create", "destroy", "assign_leader"]:
             permission_classes = [IsAdminUser]
         elif self.action in ["update", "partial_update"]:
             permission_classes = [IsAuthenticated, IsTeamLeaderOrReadOnly]
-        else:  # list, retrieve, custom actions
+        else:  # list, retrieve, other custom actions
             permission_classes = [IsAuthenticated]
 
         return [permission() for permission in permission_classes]
+
+    def create(self, request, *args, **kwargs):
+        """Override create to add proper error handling."""
+        try:
+            return super().create(request, *args, **kwargs)
+        except PermissionDenied:
+            # Re-raise permission denied to let DRF handle it properly
+            raise
+        except ValidationError as e:
+            logger.warning(f"Validation error during department creation: {str(e)}")
+            return Response(
+                {"detail": "Invalid data provided", "errors": e.detail},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error creating department: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while creating department"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def update(self, request, *args, **kwargs):
+        """Override update to add proper error handling."""
+        try:
+            return super().update(request, *args, **kwargs)
+        except PermissionDenied:
+            # Re-raise permission denied to let DRF handle it properly
+            raise
+        except ValidationError as e:
+            logger.warning(f"Validation error during department update: {str(e)}")
+            return Response(
+                {"detail": "Invalid data provided", "errors": e.detail},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error updating department: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while updating department"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def destroy(self, request, *args, **kwargs):
+        """Override destroy to add proper error handling."""
+        try:
+            department = self.get_object()
+            # Check if department has members
+            if department.members.exists():
+                return Response(
+                    {"detail": "Cannot delete department with existing members"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            return super().destroy(request, *args, **kwargs)
+        except PermissionDenied:
+            # Re-raise permission denied to let DRF handle it properly
+            raise
+        except Department.DoesNotExist:
+            return Response(
+                {"detail": "Department not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error deleting department: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while deleting department"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticated])
     def members(self, request, pk=None):
@@ -106,6 +172,19 @@ class DepartmentViewSet(viewsets.ModelViewSet):
         """
         try:
             department = self.get_object()
+        except Department.DoesNotExist:
+            return Response(
+                {"detail": "Department not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving department: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while retrieving department"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        try:
             members = department.members.select_related("department").order_by(
                 "first_name", "last_name"
             )
@@ -120,7 +199,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error retrieving department members: {str(e)}", exc_info=True)
             return Response(
-                {"error": "An error occurred while retrieving department members"},
+                {"detail": "An error occurred while retrieving department members"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -129,14 +208,27 @@ class DepartmentViewSet(viewsets.ModelViewSet):
         """
         Get departments managed by the current user.
         """
-        if hasattr(request.user, "led_department") and request.user.led_department:
-            department = self.get_queryset().get(pk=request.user.led_department.pk)
-            serializer = self.get_serializer(department)
-            return Response(serializer.data)
-        return Response(
-            {"detail": "You are not leading any department"},
-            status=status.HTTP_404_NOT_FOUND,
-        )
+        try:
+            if hasattr(request.user, "led_department") and request.user.led_department:
+                department = self.get_queryset().get(pk=request.user.led_department.pk)
+                serializer = self.get_serializer(department)
+                return Response(serializer.data)
+            return Response(
+                {"detail": "You are not leading any department"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Department.DoesNotExist:
+            logger.error(f"Department not found for user {request.user.username}", exc_info=True)
+            return Response(
+                {"detail": "Department not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving managed department: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while retrieving managed department"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdminUser])
     def assign_leader(self, request, pk=None):
@@ -145,38 +237,82 @@ class DepartmentViewSet(viewsets.ModelViewSet):
 
         Expects: {"user_id": <user_id>}
         """
-        department = self.get_object()
+        try:
+            department = self.get_object()
+        except Department.DoesNotExist:
+            return Response(
+                {"detail": "Department not found"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving department: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while retrieving department"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
         user_id = request.data.get("user_id")
 
         if not user_id:
             return Response(
-                {"error": "user_id is required"}, status=status.HTTP_400_BAD_REQUEST
+                {"detail": "user_id is required"}, 
+                status=status.HTTP_400_BAD_REQUEST
             )
+
+        try:
+            user_id = int(user_id)
+        except (ValueError, TypeError):
+            return Response(
+                {"detail": "user_id must be a valid integer"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         try:
             user = User.objects.get(pk=user_id)
         except User.DoesNotExist:
             return Response(
-                {"error": "User not found"}, status=status.HTTP_404_NOT_FOUND
+                {"detail": "User not found"}, 
+                status=status.HTTP_404_NOT_FOUND
             )
+        except Exception as e:
+            logger.error(f"Error retrieving user: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while retrieving user"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
         # Validate user can be team leader
         if user.user_type not in ["ADMIN", "SENIOR_TECH"]:
             return Response(
-                {"error": "User must be Admin or Senior Technician"},
+                {"detail": "User must be Admin or Senior Technician"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Check if user is in this department
         if user.department != department:
             return Response(
-                {"error": "User must be a member of this department"},
+                {"detail": "User must be a member of this department"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        department.team_leader = user
-        department.save()
+        try:
+            # Use transaction to ensure data consistency
+            with transaction.atomic():
+                department.team_leader = user
+                department.save()
 
-        serializer = self.get_serializer(department)
-        return Response(serializer.data)
+            serializer = self.get_serializer(department)
+            logger.info(f"Team leader assigned: {user.username} to {department.get_name_display()} by {request.user.username}")
+            return Response({
+                "detail": "Team leader assigned successfully",
+                "department": serializer.data
+            })
+        except Exception as e:
+            logger.error(f"Error assigning team leader: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while assigning team leader"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -241,6 +377,78 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return [permission() for permission in permission_classes]
 
+    def create(self, request, *args, **kwargs):
+        """Override create to add proper error handling."""
+        try:
+            return super().create(request, *args, **kwargs)
+        except PermissionDenied:
+            # Re-raise permission denied to let DRF handle it properly
+            raise
+        except ValidationError as e:
+            logger.warning(f"Validation error during user creation: {str(e)}")
+            return Response(
+                {"detail": "Invalid data provided", "errors": e.detail},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error creating user: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while creating user"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def update(self, request, *args, **kwargs):
+        """Override update to add proper error handling."""
+        try:
+            return super().update(request, *args, **kwargs)
+        except PermissionDenied:
+            # Re-raise permission denied to let DRF handle it properly
+            raise
+        except ValidationError as e:
+            logger.warning(f"Validation error during user update: {str(e)}")
+            return Response(
+                {"detail": "Invalid data provided", "errors": e.detail},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error updating user: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while updating user"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def destroy(self, request, *args, **kwargs):
+        """Override destroy to add proper error handling."""
+        try:
+            user = self.get_object()
+            # Prevent deletion of team leaders
+            if hasattr(user, 'led_department') and user.led_department:
+                return Response(
+                    {"detail": "Cannot delete user who is a team leader. Please reassign leadership first."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            # Prevent self-deletion
+            if user == request.user:
+                return Response(
+                    {"detail": "Cannot delete your own account"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            return super().destroy(request, *args, **kwargs)
+        except PermissionDenied:
+            # Re-raise permission denied to let DRF handle it properly
+            raise
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "User not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error deleting user: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while deleting user"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
     @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
     def me(self, request):
         """
@@ -253,13 +461,13 @@ class UserViewSet(viewsets.ModelViewSet):
         except User.DoesNotExist:
             logger.error(f"User with ID {request.user.pk} does not exist", exc_info=True)
             return Response(
-                {"error": "User not found"},
+                {"detail": "User not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
             logger.error(f"Error retrieving user profile: {str(e)}", exc_info=True)
             return Response(
-                {"error": "An error occurred while retrieving user profile"},
+                {"detail": "An error occurred while retrieving user profile"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -270,13 +478,25 @@ class UserViewSet(viewsets.ModelViewSet):
         """
         try:
             user = self.get_object()
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "User not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving user: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while retrieving user"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-            if user.is_verified:
-                return Response(
-                    {"detail": "User is already verified"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        if user.is_verified:
+            return Response(
+                {"detail": "User is already verified"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
+        try:
             user.is_verified = True
             user.save(update_fields=["is_verified"])
             serializer = self.get_serializer(user)
@@ -287,7 +507,7 @@ class UserViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error verifying user: {str(e)}", exc_info=True)
             return Response(
-                {"error": "An error occurred while verifying user"},
+                {"detail": "An error occurred while verifying user"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -298,13 +518,25 @@ class UserViewSet(viewsets.ModelViewSet):
         """
         try:
             user = self.get_object()
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "User not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving user: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": "An error occurred while retrieving user"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-            if not user.is_verified:
-                return Response(
-                    {"detail": "User is already unverified"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        if not user.is_verified:
+            return Response(
+                {"detail": "User is already unverified"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
+        try:
             user.is_verified = False
             user.save(update_fields=["is_verified"])
             serializer = self.get_serializer(user)
@@ -315,7 +547,7 @@ class UserViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error unverifying user: {str(e)}", exc_info=True)
             return Response(
-                {"error": "An error occurred while unverifying user"},
+                {"detail": "An error occurred while unverifying user"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -381,13 +613,13 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
         except ValidationError as e:
             logger.warning(f"Validation error during profile update for user {request.user.username}: {str(e)}")
             return Response(
-                {"error": "Invalid data provided", "details": e.detail},
+                {"detail": "Invalid data provided", "errors": e.detail},
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
             logger.error(f"Error updating profile for user {request.user.username}: {str(e)}", exc_info=True)
             return Response(
-                {"error": "An error occurred while updating profile"},
+                {"detail": "An error occurred while updating profile"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -402,10 +634,15 @@ class ChangePasswordView(generics.UpdateAPIView):
     serializer_class = ChangePasswordSerializer
     permission_classes = [IsAuthenticated]
     throttle_classes = [UserRateThrottle]
+    http_method_names = ['put', 'patch', 'post']  # Allow POST method
 
     def get_object(self, queryset=None):
         """Return the current user."""
         return self.request.user
+
+    def post(self, request, *args, **kwargs):
+        """Handle POST requests the same as PUT."""
+        return self.update(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
         """Handle password update with proper validation."""
@@ -415,7 +652,7 @@ class ChangePasswordView(generics.UpdateAPIView):
             logger.info(f"User {request.user.username} attempting to change password")
 
             serializer = self.get_serializer(
-                instance=self.object, data=request.data, context={"request": request}
+                instance=self.get_object(), data=request.data, context={"request": request}
             )
             serializer.is_valid(
                 raise_exception=True
@@ -429,13 +666,13 @@ class ChangePasswordView(generics.UpdateAPIView):
         except ValidationError as e:
             logger.warning(f"Validation error during password change for user {request.user.username}: {str(e)}")
             return Response(
-                {"error": "Invalid data provided", "details": e.detail},
+                {"detail": "Invalid data provided", "errors": e.detail},
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
             logger.error(f"Error changing password for user {request.user.username}: {str(e)}", exc_info=True)
             return Response(
-                {"error": "An error occurred while changing password"},
+                {"detail": "An error occurred while changing password"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -496,7 +733,7 @@ class MyDepartmentMembersView(generics.ListAPIView):
             response_data = {
                 "department": None,
                 "count": self.paginator.page.paginator.count,
-                "results": serializer.data,
+                "members": serializer.data,  # Use 'members' instead of 'results'
             }
 
             # Add department info for team leaders
@@ -504,10 +741,10 @@ class MyDepartmentMembersView(generics.ListAPIView):
                 response_data["department"] = {
                     "id": request.user.led_department.id,
                     "name": request.user.led_department.get_name_display(),
-                    "member_count": request.user.led_department.member_count,
+                    "member_count": request.user.led_department.get_member_count(),
                 }
 
-            return self.get_paginated_response(response_data)
+            return Response(response_data)
 
         serializer = self.get_serializer(queryset, many=True)
         response_data = {"members": serializer.data}

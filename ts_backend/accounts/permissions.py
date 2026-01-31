@@ -48,12 +48,13 @@ class IsTeamLeaderOrReadOnly(permissions.BasePermission):
             return False
 
         is_admin = request.user.user_type == 'ADMIN'
-        is_team_leader = request.user.managed_departments.exists()
+        is_team_leader = hasattr(request.user, 'led_department') and request.user.led_department is not None
 
         return is_admin or is_team_leader
     
     def has_object_permission(self, request, view, obj):
         return (
         request.user.user_type == 'ADMIN' or
-        obj.department in request.user.managed_departments.all()
+        (hasattr(request.user, 'led_department') and 
+         request.user.led_department == obj)
         )

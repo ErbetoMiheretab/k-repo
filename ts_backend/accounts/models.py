@@ -62,8 +62,7 @@ class Department(models.Model):
     def __str__(self):
         return self.get_name_display()
 
-    @property
-    def member_count(self):
+    def get_member_count(self):
         """Return the number of members in this department."""
         return self.members.count()
 

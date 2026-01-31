@@ -31,7 +31,7 @@ class ModelTests(TestCase):
     def test_department_creation(self):
         self.assertEqual(self.department.name, 'CYBER_SECURITY')
         self.assertEqual(str(self.department), 'Cyber Security')
-        self.assertEqual(self.department.member_count, 2)
+        self.assertEqual(self.department.get_member_count(), 2)
 
     def test_user_creation(self):
         self.assertEqual(self.user.username, 'testuser')
@@ -47,15 +47,21 @@ class ModelTests(TestCase):
         admin_user = User.objects.create_user(
             username='adminuser',
             password='password123',
+            email='admin@example.com',  # Added required email
             user_type='ADMIN'
         )
         self.assertTrue(admin_user.is_superuser)
         self.assertTrue(admin_user.is_staff)
 
     def test_team_leader_validation(self):
+        # Create a department and try to assign a user who is not in that department
+        other_dept = Department.objects.create(name='NETWORK', description='Network Department')
+        
+        # Try to assign team leader who is not in the department
+        other_dept.team_leader = self.user  # self.user is in self.department, not other_dept
+        
         with self.assertRaises(ValidationError):
-            department = Department(name='NETWORK', team_leader=self.user)
-            department.full_clean()  # This will trigger the validation error
+            other_dept.full_clean()  # This will trigger the validation error
 
     def test_unique_email_validation(self):
         with self.assertRaises(ValidationError):
@@ -70,7 +76,7 @@ class APIV1Tests(APITestCase):
         self.department2 = Department.objects.create(name='NETWORK', description='Network Department')
 
         # Users
-        self.admin_user = User.objects.create_superuser('admin', 'admin@example.com', 'password123')
+        self.admin_user = User.objects.create_superuser('admin', 'admin@example.com', 'password123', user_type='ADMIN')
         self.senior_tech = User.objects.create_user(
             'senior_tech', 'senior@example.com', 'password123',
             user_type='SENIOR_TECH', role='CYBER_SECURITY', department=self.department1,
@@ -202,4 +208,8 @@ class APIV1Tests(APITestCase):
         self._login(self.admin_user)
         response = self.client.get(f'/api/v1/accounts/departments/{self.department1.id}/members/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
+        # Check if response is paginated or not
+        if 'results' in response.data:
+            self.assertEqual(len(response.data['results']), 2)
+        else:
+            self.assertEqual(len(response.data), 2)

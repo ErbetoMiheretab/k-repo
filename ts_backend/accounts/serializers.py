@@ -120,7 +120,7 @@ class UserSerializer(serializers.ModelSerializer):
     department_name = serializers.SerializerMethodField()
     department_details = serializers.SerializerMethodField()  # Added
     full_name = serializers.CharField(source="get_full_name", read_only=True)
-    led_department = DepartmentSerializer(many=True, read_only=True)
+    led_department = serializers.SerializerMethodField(read_only=True)
     is_team_leader = serializers.SerializerMethodField(read_only=True)
     user_type_display = serializers.CharField(source="get_role_display", read_only=True)
 
@@ -151,7 +151,7 @@ class UserSerializer(serializers.ModelSerializer):
             return {
                 "id": obj.led_department.id,
                 "name": obj.led_department.get_name_display(),
-                "member_count": obj.led_department.member_count,
+                "member_count": obj.led_department.get_member_count(),
             }
         return None
 
@@ -315,6 +315,15 @@ class UserProfileSerializer(serializers.ModelSerializer):
     def get_department_name(self, obj):
         return obj.department.get_name_display() if obj.department else None
 
+    def get_department_details(self, obj):
+        """Return detailed department info."""
+        if obj.department:
+            return {
+                "id": obj.department.id,
+                "name": obj.department.get_name_display(),
+            }
+        return None
+
     def get_is_team_leader(self, obj):
         """Return whether user is a team leader."""
         return obj.is_team_leader()
@@ -435,6 +444,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Add additional user data
         data.update(
             {
+                "user_type": self.user.user_type,  # Add at root level for backward compatibility
                 "user": {
                     "id": self.user.id,
                     "employee_id": str(self.user.employee_id),

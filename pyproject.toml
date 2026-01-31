@@ -15,4 +15,5 @@ dependencies = [
     "faker>=37.8.0",
     "pillow>=11.3.0",
     "python-magic>=0.4.27",
+    "ruff>=0.14.14",
 ]

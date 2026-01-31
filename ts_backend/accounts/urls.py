@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import views
 # from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -15,7 +16,7 @@ urlpatterns = [
 
     #Auth endpoints
     path('token/', views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('token/refresh/', views.TokenRefreshView.as_view(), name='token_refresh'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     # User profile endpoints
     path('profile/', views.UserProfileView.as_view(), name='user_profile'),

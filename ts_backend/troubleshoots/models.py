@@ -1,18 +1,12 @@
 from django.db import models, transaction
 from django.contrib.auth import get_user_model
-from django.contrib.postgres.search import SearchVector
-from django.core.validators import (
-    FileExtensionValidator,
-)
-from django.db.models import Sum, Value, IntegerField, F, Q, Count, Case, When
+from django.db.models import Q, Count
 from django.core.exceptions import ValidationError
 from django.contrib.postgres.search import SearchVectorField
 from django.contrib.postgres.indexes import GinIndex
 from django.utils.text import slugify
-from django.utils import timezone
-from mptt.models import MPTTModel, TreeForeignKey
 from django.conf import settings
-import magic, re
+import re
 
 
 User = get_user_model()
